@@ -29,7 +29,7 @@ services:
       MARIADB_PASSWORD: ${DB_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
-
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:rx
 volumes:
   db_data:
   frontend:
