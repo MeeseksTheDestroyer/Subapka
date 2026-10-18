@@ -1,6 +1,7 @@
 services:
   backend:
     build: ./backend
+    command: uvicorn main:app --host 0.0.0.0 --port 2137 --reload
     ports:
       - "2137:2137"
     environment:
@@ -9,19 +10,27 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
+      WATCHFILES_FORCE_POLLING: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./backend:/app
     depends_on:
       - db
 
   frontend:
-    image: nginx:alpine
+    build: ./frontend
     ports:
-      - "3000:80"
+      - "3000:3000"
+    environment:
+      BACKEND_URL: http://backend:2137
     volumes:
-      - frontend:/usr/share/nginx/html
-    
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
 
   db:
-    image: mariadb:latest
+    image: mariadb:11
     environment:
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MARIADB_DATABASE: ${DB_NAME}
@@ -29,7 +38,7 @@ services:
       MARIADB_PASSWORD: ${DB_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:rx
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
 volumes:
   db_data:
-  frontend:
