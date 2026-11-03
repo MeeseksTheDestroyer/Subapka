@@ -1,5 +1,5 @@
 from datetime import datetime
-
+import pymysql
 from fastapi import APIRouter, Depends
 from db import get_db
 from pydantic import BaseModel
@@ -30,16 +30,16 @@ def get_user(id: int, db=Depends(get_db)):
 
 @router.post("")
 def create_user(user: UserType, db=Depends(get_db)):
-    with db.cursor() as cur:
-        try:
+    try:    
+        with db.cursor() as cur:
             cur.execute(
                 "INSERT INTO users (name, email, password) VALUES (%s, %s, %s)",
                 (user.name, user.email, user.password),
             )
             db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"Error creating user: {e}")
-            return {"ok": False, "error": str(e)}
+    except pymysql.IntegrityError as e:
+        db.rollback()
+        print(f"Error creating user: {e}")
+        raise HTTPException(status_code=400, detail="Uzytkownik z takim emailem juz istnieje")
 
         return {"ok": True}

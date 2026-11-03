@@ -50,7 +50,6 @@ def get_sub(sub_id: int, db=Depends(get_db)):
         if row is None:
             raise HTTPException(status_code=404, detail="Nie ma takiej subskrypcji")
         return {"items": row}
-        
 
 
 @router.post("")
@@ -69,4 +68,3 @@ def create_sub(sub: SubCreate, db=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Nieznany typ subskrypcji albo użytkownik")
 
     return {"ok": True}
-
