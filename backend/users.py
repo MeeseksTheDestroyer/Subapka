@@ -16,14 +16,17 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("")
 def get_users(db=Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT id, name, email, password, created_at FROM users ORDER BY id")
+        cur.execute("SELECT id, name, email, created_at FROM users ORDER BY id")
         return {"items": cur.fetchall()}
 
 @router.get("/{id}")
 def get_user(id: int, db=Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT id, name, email, password, created_at FROM users WHERE id = %s", (id,))
-        return {"items": cur.fetchone()}
+        cur.execute("SELECT id, name, email, created_at FROM users WHERE id = %s", (id,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Nie ma takiego uzytkownika")
+        return {"items": row}
 
 @router.post("")
 def create_user(user: UserType, db=Depends(get_db)):
