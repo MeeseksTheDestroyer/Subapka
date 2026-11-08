@@ -24,6 +24,25 @@ class SubCreate(BaseModel):
     user_id: int 
     status: Status = "active"
 
+class SubUpdate(BaseModel):
+    name: str
+    price: Decimal = Field(gt=0)
+    currency: str = Field(min_length=3, max_length=3)
+    type: str
+    renewal_date: date
+    user_id: int
+    status: Status
+
+
+class SubPatch(BaseModel):
+    name: str | None = None
+    price: Decimal | None = Field(default=None, gt=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    type: str | None = None
+    renewal_date: date | None = None
+    user_id: int | None = None
+    status: Status | None = None
+
 
 @router.get("")
 def get_subs(user_id: int | None = None, status: Status | None = None, db=Depends(get_db)):
@@ -68,3 +87,39 @@ def create_sub(sub: SubCreate, db=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Nieznany typ subskrypcji albo użytkownik")
 
     return {"ok": True}
+
+def _get_sub_or_404(cur, sub_id: int):
+    cur.execute(f"SELECT {COLUMNS} FROM subscriptions WHERE id = %s", (sub_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Nie ma takiej subskrypcji")
+    return row
+
+
+def _update_sub(sub_id: int, fields: dict, db):
+    if not fields:
+        raise HTTPException(status_code=400, detail="Brak pól do aktualizacji")
+    try:
+        with db.cursor() as cur:
+            sub = _get_sub_or_404(cur, sub_id)
+            set_clause = ", ".join(f"{col} = %s" for col in fields)
+            cur.execute(f"UPDATE subscriptions SET {set_clause} WHERE id = %s", (*fields.values(), sub_id))
+            
+            db.commit()
+            
+            return {"items": sub}
+
+    except pymysql.IntegrityError as e:
+        db.rollback()
+        print(f"Error updating subscription: {e}")
+        raise HTTPException(status_code=400, detail="Nieznany typ subskrypcji albo użytkownik")
+
+
+@router.put("/{sub_id}")
+def replace_sub(sub_id: int, sub: SubUpdate, db=Depends(get_db)):
+    return _update_sub(sub_id, sub.model_dump(), db)
+
+
+@router.patch("/{sub_id}")
+def update_sub(sub_id: int, sub: SubPatch, db=Depends(get_db)):
+    return _update_sub(sub_id, sub.model_dump(exclude_unset=True, exclude_none=True), db)

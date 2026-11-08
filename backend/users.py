@@ -1,6 +1,6 @@
 from datetime import datetime
 import pymysql
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from db import get_db
 from pydantic import BaseModel
 
@@ -10,6 +10,18 @@ class UserType(BaseModel):
     email : str
     password: str
     created_at: datetime | None = None
+
+class UserUpdate(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class UserPatch(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    password: str | None = None
+
+
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -42,4 +54,42 @@ def create_user(user: UserType, db=Depends(get_db)):
         print(f"Error creating user: {e}")
         raise HTTPException(status_code=400, detail="Uzytkownik z takim emailem juz istnieje")
 
-        return {"ok": True}
+    return {"ok": True}
+
+
+def _get_user_or_404(cur, id: int):
+    cur.execute("SELECT id, name, email, created_at FROM users WHERE id = %s", (id,))
+    row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Nie ma takiego uzytkownika")
+    return row
+
+
+def _update_user(id: int, fields: dict, db):
+    if not fields:
+        raise HTTPException(status_code=400, detail="Brak pol do aktualizacji")
+    try:
+        with db.cursor() as cur:
+            user = _get_user_or_404(cur, id)
+            set_clause = ", ".join(f"{col} = %s" for col in fields)
+            cur.execute(f"UPDATE users SET {set_clause} WHERE id = %s", (*fields.values(), id))
+            db.commit()
+
+            return {"items": user}
+
+    except pymysql.IntegrityError as e:
+        db.rollback()
+        print(f"Error updating user: {e}")
+        raise HTTPException(status_code=400, detail="Uzytkownik z takim emailem lub nazwa juz istnieje")
+
+
+@router.put("/{id}")
+def replace_user(id: int, user: UserUpdate, db=Depends(get_db)):
+    return _update_user(id, user.model_dump(), db)
+
+
+@router.patch("/{id}")
+def update_user(id: int, user: UserPatch, db=Depends(get_db)):
+    return _update_user(id, user.model_dump(exclude_unset=True, exclude_none=True), db)
+
+

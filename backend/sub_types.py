@@ -1,10 +1,19 @@
-from fastapi import APIRouter, Depends
+import pymysql
+from fastapi import APIRouter, Depends, HTTPException
 from db import get_db
 from pydantic import BaseModel
 
 class SubType(BaseModel):
     name: str
     label: str
+
+class SubTypeUpdate(BaseModel):
+    label: str | None
+
+class SubTypePatch(BaseModel):
+    label: str | None = None
+
+
 
 router = APIRouter(prefix="/types", tags=["types"])
 
@@ -24,7 +33,6 @@ def get_type(name: str, db=Depends(get_db)):
         return {"items": row}
 
 
-
 @router.post("")
 def create_type(sub: SubType, db=Depends(get_db)):
     try:
@@ -37,3 +45,36 @@ def create_type(sub: SubType, db=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Taki typ juz istnieje")
 
     return {"ok": True}
+
+def _get_type_or_404(cur, name: str):
+    cur.execute("SELECT name, label FROM types WHERE name = %s", (name,))
+    row = cur.fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Nie ma takiego typu")
+
+    return row
+
+
+def _update_type(name: str, fields: dict, db):
+    if not fields:
+        raise HTTPException(status_code=400, detail="Brak pol do aktualizacji")
+
+    with db.cursor() as cur:
+        _type = _get_type_or_404(cur, name)
+        set_clause = ", ".join(f"{col} = %s" for col in fields)
+
+        cur.execute(f"UPDATE types SET {set_clause} WHERE name = %s", (*fields.values(), name))
+        db.commit()
+        
+        return {"items": _type }
+
+
+@router.put("/{name}")
+def replace_type(name: str, sub: SubTypeUpdate, db=Depends(get_db)):
+    return _update_type(name, sub.model_dump(), db)
+
+
+@router.patch("/{name}")
+def update_type(name: str, sub: SubTypePatch, db=Depends(get_db)):
+    return _update_type(name, sub.model_dump(exclude_unset=True), db)
