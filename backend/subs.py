@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 
 import pymysql
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from db import get_db
@@ -16,29 +16,29 @@ COLUMNS = "id, name, price, currency, type, renewal_date, user_id, status, creat
 
 
 class SubCreate(BaseModel):
-    name: str 
-    price: Decimal
-    currency: str 
-    type: str 
+    name: str = Field(min_length=1)
+    price: Decimal = Field(gt=0)
+    currency: str = Field(min_length=3, max_length=3)
+    type: str = Field(min_length=1)
     renewal_date: date
-    user_id: int 
+    user_id: int
     status: Status = "active"
 
 class SubUpdate(BaseModel):
-    name: str
+    name: str = Field(min_length=1)
     price: Decimal = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3)
-    type: str
+    type: str = Field(min_length=1)
     renewal_date: date
     user_id: int
     status: Status
 
 
 class SubPatch(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1)
     price: Decimal | None = Field(default=None, gt=0)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
-    type: str | None = None
+    type: str | None = Field(default=None, min_length=1)
     renewal_date: date | None = None
     user_id: int | None = None
     status: Status | None = None
@@ -64,11 +64,7 @@ def get_subs(user_id: int | None = None, status: Status | None = None, db=Depend
 @router.get("/{sub_id}")
 def get_sub(sub_id: int, db=Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute(f"SELECT {COLUMNS} FROM subscriptions WHERE id = %s", (sub_id,))
-        row = cur.fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Nie ma takiej subskrypcji")
-        return {"items": row}
+        return {"items": _get_sub_or_404(cur, sub_id)}
 
 
 @router.post("")
@@ -82,11 +78,12 @@ def create_sub(sub: SubCreate, db=Depends(get_db)):
             )
             new_id = cur.lastrowid
         db.commit()
-    except Exception as e:
+    except pymysql.IntegrityError as e:
         db.rollback()
+        print(f"Error creating subscription: {e}")
         raise HTTPException(status_code=400, detail="Nieznany typ subskrypcji albo użytkownik")
 
-    return {"ok": True}
+    return {"ok": True, "id": new_id}
 
 def _get_sub_or_404(cur, sub_id: int):
     cur.execute(f"SELECT {COLUMNS} FROM subscriptions WHERE id = %s", (sub_id,))
@@ -101,13 +98,13 @@ def _update_sub(sub_id: int, fields: dict, db):
         raise HTTPException(status_code=400, detail="Brak pól do aktualizacji")
     try:
         with db.cursor() as cur:
-            sub = _get_sub_or_404(cur, sub_id)
+            _get_sub_or_404(cur, sub_id)
             set_clause = ", ".join(f"{col} = %s" for col in fields)
             cur.execute(f"UPDATE subscriptions SET {set_clause} WHERE id = %s", (*fields.values(), sub_id))
             
             db.commit()
             
-            return {"items": sub}
+            return {"items": _get_sub_or_404(cur, sub_id)}
 
     except pymysql.IntegrityError as e:
         db.rollback()

@@ -1,17 +1,17 @@
 import pymysql
 from fastapi import APIRouter, Depends, HTTPException
 from db import get_db
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class SubType(BaseModel):
-    name: str
-    label: str
+    name: str = Field(min_length=1, max_length=50)
+    label: str = Field(min_length=1, max_length=100)
 
 class SubTypeUpdate(BaseModel):
-    label: str | None
+    label: str = Field(min_length=1, max_length=100)
 
 class SubTypePatch(BaseModel):
-    label: str | None = None
+    label: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 
@@ -26,11 +26,7 @@ def get_types(db=Depends(get_db)):
 @router.get("/{name}")
 def get_type(name: str, db=Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT name, label FROM types WHERE name = %s", (name,))
-        row = cur.fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Nie ma takiej subskrybcji")
-        return {"items": row}
+        return {"items": _get_type_or_404(cur, name)}
 
 
 @router.post("")
@@ -44,7 +40,7 @@ def create_type(sub: SubType, db=Depends(get_db)):
         print(f"Error creating type: {e}")
         raise HTTPException(status_code=400, detail="Taki typ juz istnieje")
 
-    return {"ok": True}
+    return {"items": {"name": sub.name, "label": sub.label}}
 
 def _get_type_or_404(cur, name: str):
     cur.execute("SELECT name, label FROM types WHERE name = %s", (name,))
@@ -59,15 +55,20 @@ def _get_type_or_404(cur, name: str):
 def _update_type(name: str, fields: dict, db):
     if not fields:
         raise HTTPException(status_code=400, detail="Brak pol do aktualizacji")
+    try:
+        with db.cursor() as cur:
+            _get_type_or_404(cur, name)
+            set_clause = ", ".join(f"{col} = %s" for col in fields)
 
-    with db.cursor() as cur:
-        _type = _get_type_or_404(cur, name)
-        set_clause = ", ".join(f"{col} = %s" for col in fields)
+            cur.execute(f"UPDATE types SET {set_clause} WHERE name = %s", (*fields.values(), name))
+            db.commit()
 
-        cur.execute(f"UPDATE types SET {set_clause} WHERE name = %s", (*fields.values(), name))
-        db.commit()
-        
-        return {"items": _type }
+            return {"items": _get_type_or_404(cur, name)}
+
+    except pymysql.IntegrityError as e:
+        db.rollback()
+        print(f"Error updating type: {e}")
+        raise HTTPException(status_code=400, detail="Nieprawidlowe dane typu")
 
 
 @router.put("/{name}")
@@ -77,4 +78,4 @@ def replace_type(name: str, sub: SubTypeUpdate, db=Depends(get_db)):
 
 @router.patch("/{name}")
 def update_type(name: str, sub: SubTypePatch, db=Depends(get_db)):
-    return _update_type(name, sub.model_dump(exclude_unset=True), db)
+    return _update_type(name, sub.model_dump(exclude_unset=True, exclude_none=True), db)
