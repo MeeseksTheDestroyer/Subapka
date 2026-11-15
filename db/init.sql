@@ -24,10 +24,21 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 	status		VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
 	created_at 	TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (type) REFERENCES types(name),
-	FOREIGN KEY (user_id) REFERENCES users(id)
+	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB CHARSET=utf8mb4;
 
 INSERT INTO types (name, label) VALUES
 	('weekly', 'co tydzien'),
 	('monthly', 'co miesiac'),
 	('yearly', 'co rok');
+
+INSERT INTO users (name, email, password) VALUES
+	('jan', 'jan@example.com', 'haslo1234');
+
+SET @jan_id = (SELECT id FROM users WHERE email = 'jan@example.com');
+
+INSERT INTO subscriptions (name, price, currency, type, renewal_date, user_id, status) VALUES
+	('Netflix', 43.00, 'PLN', 'monthly', '2026-12-01', @jan_id, 'active'),
+	('Spotify', 23.99, 'PLN', 'monthly', '2026-11-20', @jan_id, 'active'),
+	('Amazon Prime', 49.00, 'PLN', 'yearly', '2027-03-15', @jan_id, 'active'),
+	('Tygodnik', 12.00, 'PLN', 'weekly', '2026-11-18', @jan_id, 'cancelled');
