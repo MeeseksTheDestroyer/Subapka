@@ -1,18 +1,19 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-import pymysql
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from db import get_db
+from models import Subscription
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 Status = Literal["active", "cancelled"]
-
-COLUMNS = "id, name, price, currency, type, renewal_date, user_id, status, created_at"
 
 
 class SubCreate(BaseModel):
@@ -44,79 +45,81 @@ class SubPatch(BaseModel):
     status: Status | None = None
 
 
-@router.get("")
-def get_subs(user_id: int | None = None, status: Status | None = None, db=Depends(get_db)):
-    query = f"SELECT {COLUMNS} FROM subscriptions WHERE 1=1"
-    params = []
-    if user_id is not None:
-        query += " AND user_id = %s"
-        params.append(user_id)
-    if status is not None:
-        query += " AND status = %s"
-        params.append(status)
-    query += " ORDER BY renewal_date, id"
+class SubOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
-    with db.cursor() as cur:
-        cur.execute(query, params)
-        return {"items": cur.fetchall()}
+    id: int
+    name: str
+    price: float
+    currency: str
+    type: str
+    renewal_date: date
+    user_id: int
+    status: str
+    created_at: datetime
+
+
+@router.get("")
+def get_subs(user_id: int | None = None, status: Status | None = None, db: Session = Depends(get_db)):
+    query = select(Subscription)
+    if user_id is not None:
+        query = query.where(Subscription.user_id == user_id)
+    if status is not None:
+        query = query.where(Subscription.status == status)
+    query = query.order_by(Subscription.renewal_date, Subscription.id)
+
+    subs = db.scalars(query).all()
+    return {"items": [SubOut.model_validate(sub) for sub in subs]}
 
 
 @router.get("/{sub_id}")
-def get_sub(sub_id: int, db=Depends(get_db)):
-    with db.cursor() as cur:
-        return {"items": _get_sub_or_404(cur, sub_id)}
+def get_sub(sub_id: int, db: Session = Depends(get_db)):
+    return {"items": SubOut.model_validate(_get_sub_or_404(db, sub_id))}
 
 
 @router.post("")
-def create_sub(sub: SubCreate, db=Depends(get_db)):
+def create_sub(sub: SubCreate, db: Session = Depends(get_db)):
+    new_sub = Subscription(**sub.model_dump())
+    db.add(new_sub)
     try:
-        with db.cursor() as cur:
-            cur.execute(
-                "INSERT INTO subscriptions (name, price, currency, type, renewal_date, user_id, status) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (sub.name, sub.price, sub.currency, sub.type, sub.renewal_date, sub.user_id, sub.status),
-            )
-            new_id = cur.lastrowid
         db.commit()
-    except pymysql.IntegrityError as e:
+    except IntegrityError as e:
         db.rollback()
-        print(f"Error creating subscription: {e}")
+        print(f"Error creating subscription: {e.orig}")
         raise HTTPException(status_code=400, detail="Nieznany typ subskrypcji albo użytkownik")
 
-    return {"ok": True, "id": new_id}
+    return {"ok": True, "id": new_sub.id}
 
-def _get_sub_or_404(cur, sub_id: int):
-    cur.execute(f"SELECT {COLUMNS} FROM subscriptions WHERE id = %s", (sub_id,))
-    row = cur.fetchone()
-    if row is None:
+def _get_sub_or_404(db: Session, sub_id: int) -> Subscription:
+    sub = db.get(Subscription, sub_id)
+    if sub is None:
         raise HTTPException(status_code=404, detail="Nie ma takiej subskrypcji")
-    return row
+    return sub
 
 
-def _update_sub(sub_id: int, fields: dict, db):
+def _update_sub(sub_id: int, fields: dict, db: Session):
     if not fields:
         raise HTTPException(status_code=400, detail="Brak pól do aktualizacji")
-    try:
-        with db.cursor() as cur:
-            _get_sub_or_404(cur, sub_id)
-            set_clause = ", ".join(f"{col} = %s" for col in fields)
-            cur.execute(f"UPDATE subscriptions SET {set_clause} WHERE id = %s", (*fields.values(), sub_id))
-            
-            db.commit()
-            
-            return {"items": _get_sub_or_404(cur, sub_id)}
 
-    except pymysql.IntegrityError as e:
+    sub = _get_sub_or_404(db, sub_id)
+    for field, value in fields.items():
+        setattr(sub, field, value)
+
+    try:
+        db.commit()
+    except IntegrityError as e:
         db.rollback()
-        print(f"Error updating subscription: {e}")
+        print(f"Error updating subscription: {e.orig}")
         raise HTTPException(status_code=400, detail="Nieznany typ subskrypcji albo użytkownik")
+
+    return {"items": SubOut.model_validate(sub)}
 
 
 @router.put("/{sub_id}")
-def replace_sub(sub_id: int, sub: SubUpdate, db=Depends(get_db)):
+def replace_sub(sub_id: int, sub: SubUpdate, db: Session = Depends(get_db)):
     return _update_sub(sub_id, sub.model_dump(), db)
 
 
 @router.patch("/{sub_id}")
-def update_sub(sub_id: int, sub: SubPatch, db=Depends(get_db)):
+def update_sub(sub_id: int, sub: SubPatch, db: Session = Depends(get_db)):
     return _update_sub(sub_id, sub.model_dump(exclude_unset=True, exclude_none=True), db)
