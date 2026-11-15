@@ -114,6 +114,17 @@ def _update_sub(sub_id: int, fields: dict, db: Session):
 
     return {"items": SubOut.model_validate(sub)}
 
+def _delete_sub(sub_id: int, db: Session):
+    sub = _get_sub_or_404(db, sub_id)
+
+    try:
+        db.delete(sub)
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        print(f"Error deleting subscription: {e.orig}")
+        raise HTTPException(status_code=400, detail="Nie można usunąć subskrypcji")
+    return sub
 
 @router.put("/{sub_id}")
 def replace_sub(sub_id: int, sub: SubUpdate, db: Session = Depends(get_db)):
@@ -123,3 +134,7 @@ def replace_sub(sub_id: int, sub: SubUpdate, db: Session = Depends(get_db)):
 @router.patch("/{sub_id}")
 def update_sub(sub_id: int, sub: SubPatch, db: Session = Depends(get_db)):
     return _update_sub(sub_id, sub.model_dump(exclude_unset=True, exclude_none=True), db)
+
+@router.delete("/{sub_id}")
+def delete_sub(sub_id: int, db: Session = Depends(get_db)):
+    return _delete_sub(sub_id, db):
