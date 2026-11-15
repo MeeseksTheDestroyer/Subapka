@@ -15,7 +15,7 @@ Wszystkie żądania i odpowiedzi używają formatu **JSON** (UTF-8).
 - POST `/types`: utworzony typ, `{"items": {"name": "...", "label": "..."}}`
 - **PUT** podmienia cały rekord wszystkie pola są wymagane.
 - **PATCH** zmienia tylko przesłane pola, pozostałe zostają bez zmian.
-- Dane wejściowe są walidowane (zobacz [Walidacja](#walidacja)). Niepoprawne dane zwracają 422.
+- Dane wejściowe są walidowane ([Walidacja](#walidacja)). Niepoprawne dane zwracają 422.
 - Daty: `"YYYY-MM-DD"`, zapis czasu: (`"2026-11-07T23:55:42"`).
 - Kwoty (`price`) w żądaniu jako liczba lub tekst (`23.99` albo `"23.99"`), w odpowiedzi jako liczba.
 
