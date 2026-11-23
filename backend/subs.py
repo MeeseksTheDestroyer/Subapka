@@ -137,4 +137,4 @@ def update_sub(sub_id: int, sub: SubPatch, db: Session = Depends(get_db)):
 
 @router.delete("/{sub_id}")
 def delete_sub(sub_id: int, db: Session = Depends(get_db)):
-    return _delete_sub(sub_id, db):
+    return _delete_sub(sub_id, db)
