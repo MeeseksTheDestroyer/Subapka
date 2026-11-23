@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -26,8 +27,11 @@ class UserPatch(BaseModel):
     email: str | None = Field(default=None, pattern=EMAIL_PATTERN, max_length=255)
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
 class UserOut(BaseModel):
-    """To, co API zwraca o uzytkowniku (bez hasla)."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -35,6 +39,16 @@ class UserOut(BaseModel):
     email: str
     created_at: datetime
 
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def check_password(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except ValueError:
+        return False
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -50,7 +64,9 @@ def get_user(id: int, db: Session = Depends(get_db)):
 
 @router.post("")
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    new_user = User(**user.model_dump())
+    data = user.model_dump()
+    data["password"] = hash_password(data["password"])
+    new_user = User(**data)
     db.add(new_user)
     try:
         db.commit()
@@ -60,6 +76,14 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Uzytkownik z takim emailem juz istnieje")
 
     return {"ok": True, "id": new_user.id}
+
+
+@router.post("/login")
+def login(data: UserLogin, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.email == data.email))
+    if user is None or not check_password(data.password, user.password):
+        raise HTTPException(status_code=401, detail="Zly email albo haslo")
+    return {"ok": True, "user": UserOut.model_validate(user)}
 
 
 def _get_user_or_404(db: Session, id: int) -> User:
@@ -72,6 +96,9 @@ def _get_user_or_404(db: Session, id: int) -> User:
 def _update_user(id: int, fields: dict, db: Session):
     if not fields:
         raise HTTPException(status_code=400, detail="Brak pol do aktualizacji")
+
+    if "password" in fields:
+        fields["password"] = hash_password(fields["password"])
 
     user = _get_user_or_404(db, id)
     for field, value in fields.items():
