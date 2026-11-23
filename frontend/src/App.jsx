@@ -7,8 +7,9 @@ function loadUser() {
   try {
     return JSON.parse(localStorage.getItem('user'))
   } catch (e){
-    return e.toJSON();
-  }
+    console.warn({"details": e.message});
+    return null;
+  } 
 }
  
 function App() {
