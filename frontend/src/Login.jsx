@@ -8,7 +8,6 @@ function post(url, body) {
   })
 }
 
-// FastAPI zwraca detail jako tekst albo liste bledow walidacji
 async function errorText(res) {
   const data = await res.json()
   if (typeof data.detail === 'string') return data.detail
@@ -29,7 +28,6 @@ function Login({ onLogin }) {
     e.preventDefault()
     setError('')
 
-    // przy rejestracji najpierw zakładamy konto, potem od razu logujemy
     if (!isLogin) {
       const res = await post('/api/users', { name, email, password })
       if (!res.ok) {

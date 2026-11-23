@@ -6,8 +6,8 @@ import './App.css'
 function loadUser() {
   try {
     return JSON.parse(localStorage.getItem('user'))
-  } catch {
-    return null
+  } catch (e){
+    return e.toJSON();
   }
 }
  
