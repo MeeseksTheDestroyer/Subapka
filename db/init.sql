@@ -33,7 +33,7 @@ INSERT INTO types (name, label) VALUES
 	('yearly', 'co rok');
 
 INSERT INTO users (name, email, password) VALUES
-	('jan', 'jan@example.com', 'haslo1234');
+	('jan', 'jan@example.com', '$2b$12$dyNC6s8JW0yikI6.7CXeGegLECzobw4sm6/Lj4/FPpcI8HflPZnKS');
 
 SET @jan_id = (SELECT id FROM users WHERE email = 'jan@example.com');
 
